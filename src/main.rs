@@ -10,6 +10,11 @@ fn parse_line(line: &str) -> String {
     let mut italic = false;
     let mut inline_code = false;
 
+    let mut is_reading_link_text = false;
+    let mut is_reading_href = false;
+    let mut link_text = String::new();
+    let mut link_href = String::new();
+
     macro_rules! parse {
         ($variable_name:ident, $tag:literal) => {
             if $variable_name {
@@ -28,6 +33,25 @@ fn parse_line(line: &str) -> String {
             parse!(bold, "b");
         } else if c == '`' {
             parse!(inline_code, "code");
+        } else if c == '[' && !is_reading_link_text {
+            is_reading_link_text = true;
+        } else if c == ']' {
+            is_reading_link_text = false;
+        } else if is_reading_link_text {
+            link_text.push(c);
+        } else if c == '(' && !link_text.is_empty() {
+            is_reading_href = true;
+        } else if c == ')' && is_reading_href {
+            is_reading_href = false;
+            write!(
+                parsed_line,
+                r#"<a href="{link_href}" target="_blank" rel="noopener noreferrer">{link_text}</a>"#
+            )
+            .unwrap();
+            link_href.clear();
+            link_text.clear();
+        } else if is_reading_href {
+            link_href.push(c);
         } else {
             parsed_line.push(c);
         }
@@ -35,40 +59,64 @@ fn parse_line(line: &str) -> String {
     parsed_line
 }
 
-fn parse_text(text: &str) -> String {
+fn parse_markdown(text: &str) -> String {
+    let mut parsed_markdown = String::new();
+
     let regex = Regex::new(r"```(\w*)").unwrap();
     let mut is_within_code_block = false;
+    let mut is_within_paragraph = false;
 
-    let lines_parsed = text.lines().map(|line| {
+    let should_end_paragraph = move || {
+        if is_within_paragraph {
+            "</p>"
+        } else {
+            ""
+        }
+    };
+
+    text.lines().for_each(|line| {
         if is_within_code_block {
             if line == "```" {
                 is_within_code_block = false;
-                "</code></pre>".to_string()
+                parsed_markdown.push_str("</code></pre>");
             } else {
-                line.to_string()
+                parsed_markdown.push_str(line);
             }
         } else {
             let heading_level = get_level_of_heading(line);
             if heading_level == 0 {
                 let code_block_capture = regex.captures(line);
-                if code_block_capture.is_some() {
+                if let Some(capture) = code_block_capture {
                     is_within_code_block = true;
-                    format!(
-                        "<pre><code class='language-{}'>",
-                        code_block_capture.unwrap().get(1).unwrap().as_str()
+                    write!(
+                        parsed_markdown,
+                        "{}<pre><code class='language-{}'>",
+                        should_end_paragraph(),
+                        capture.get(1).unwrap().as_str()
                     )
+                    .unwrap();
+                } else if !is_within_paragraph && !line.trim().is_empty() {
+                    is_within_paragraph = true;
+                    write!(parsed_markdown, "<p>{}", parse_line(line)).unwrap();
+                } else if is_within_paragraph && line.trim().is_empty() {
+                    is_within_paragraph = false;
+                    parsed_markdown.push_str("</p>");
                 } else {
-                    parse_line(line)
+                    parsed_markdown.push_str(&parse_line(line));
                 }
             } else {
-                format!(
-                    "<h{heading_level}>{}</h{heading_level}>",
+                write!(
+                    parsed_markdown,
+                    "{}<h{heading_level}>{}</h{heading_level}>",
+                    should_end_paragraph(),
                     parse_line(&line[(heading_level as usize) + 1..])
                 )
+                .unwrap();
             }
+            parsed_markdown.push('\n')
         }
     });
-    lines_parsed.collect::<Vec<String>>().join("\n")
+    parsed_markdown
 }
 
 fn get_level_of_heading(heading: &str) -> u8 {
@@ -90,20 +138,16 @@ fn get_level_of_heading(heading: &str) -> u8 {
 }
 
 fn md2html<P: AsRef<path::Path>>(input_md: P, base_html: P, output_html: P) -> io::Result<()> {
-    let parsed_body = parse_text(&fs::read_to_string(input_md)?);
+    let parsed_body = parse_markdown(&fs::read_to_string(input_md)?);
     let base_html = fs::read_to_string(base_html)?;
-    let parsed_html = str::replace(&base_html, "{template}", &parsed_body);
+
     let mut output_file = fs::File::create(output_html)?;
-    write!(output_file, "{parsed_html}")?;
-    Ok(())
+    let parsed_html = base_html.replace("{template}", &parsed_body);
+
+    write!(output_file, "{parsed_html}")
 }
 
 fn main() {
-    let test_line = "The `question` ends up being `*_why_*` not *how*";
-    println!("{}", parse_line(test_line));
-    println!("{}", get_level_of_heading("### line"));
-    println!("{}", get_level_of_heading("sentenc#e"));
-    println!("{}", parse_text(include_str!("../in/input.md")));
     md2html("./in/input.md", "./out/base.html", "./out/parsed.html").unwrap();
 }
 
@@ -164,37 +208,9 @@ mod tests {
 
     #[test]
     fn test_parse_text() {
-        let test_line = r#"
-# Learning AWS
-
-## Day 1
-
-Here is the code I found:
-
-```python
-def h():
-    return "bye"
-```
-
-The question ends up being _why_ not *how*
-
-"#;
-
-        let expected = r#"
-<h1>Learning AWS</h1>
-
-<h2>Day 1</h2>
-
-Here is the code I found:
-
-<pre><code class='language-python'>
-def h():
-    return "bye"
-</code></pre>
-
-The question ends up being <i>why</i> not <b>how</b>
-"#;
-        let actual = parse_text(test_line);
+        let test_line = include_str!("../in/test/input.md");
+        let expected = include_str!("../out/test/expected.html");
+        let actual = parse_markdown(test_line);
 
         assert_eq!(expected, actual)
     }
