@@ -1,4 +1,4 @@
-# My new Blog!
+# My new Blog
 {date: 2022/10/02}
 {description: Since my first years of college, I always knew I would end up building my own blog from scratch. What I didn't know, is that it would take me so long to start to do it! But finally, I've decided to stop procrastinating it and start building it.}
 

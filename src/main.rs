@@ -1,26 +1,25 @@
 use grouping_by::GroupingBy;
-use lazy_static::lazy_static;
 use regex::Regex;
 use std::fmt::Write;
 use std::io::{self, Write as IOWrite};
 use std::ops::ControlFlow;
 use std::str::Lines;
+use std::sync::LazyLock;
 use std::{fs, path};
 
-pub struct Article {
-    info: ArticleInfo,
-    content_html: String,
-}
-
+#[derive(Debug)]
 pub struct ArticleInfo {
     title: String,
     date: String,
     description: String,
 }
 
-lazy_static! {
-    static ref CODE_REGEX: Regex = Regex::new(r"```(\w*)").unwrap();
+pub struct Article {
+    info: ArticleInfo,
+    content_html: String,
 }
+
+static CODE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"```(\w*)").unwrap());
 
 fn parse_line(line: &str) -> String {
     let mut parsed_line = String::new();
@@ -28,7 +27,8 @@ fn parse_line(line: &str) -> String {
     let mut italic = false;
     let mut inline_code = false;
 
-    let mut is_reading_link_text = false;
+    let mut is_reading_link_or_img_text = false;
+    let mut is_reading_img = false;
     let mut is_reading_href = false;
     let mut link_text = String::new();
     let mut link_href = String::new();
@@ -46,22 +46,35 @@ fn parse_line(line: &str) -> String {
         '_' => parse(&mut parsed_line, &mut italic, "i"),
         '*' => parse(&mut parsed_line, &mut bold, "b"),
         '`' => parse(&mut parsed_line, &mut inline_code, "code"),
-        '[' if !is_reading_link_text => is_reading_link_text = true,
-        ']' => is_reading_link_text = false,
-        _ if is_reading_link_text => link_text.push(c),
+        '!' => is_reading_img = true,
+        '[' if !is_reading_link_or_img_text => is_reading_link_or_img_text = true,
+        ']' => is_reading_link_or_img_text = false,
+        _ if is_reading_link_or_img_text => link_text.push(c),
         '(' if !link_text.is_empty() => is_reading_href = true,
         ')' if is_reading_href => {
             is_reading_href = false;
-            write!(
-                parsed_line,
-                r#"<a href="{link_href}" target="_blank" rel="noopener noreferrer">{link_text}</a>"#
-            )
-            .unwrap();
+            if is_reading_img {
+                write!(
+                    parsed_line,
+                    r#"<img src="{link_href}" alt="{link_text}"></a>"#
+                )
+                .unwrap();
+            } else {
+                write!(
+                    parsed_line,
+                    r#"<a href="{link_href}" target="_blank" rel="noopener noreferrer">{link_text}</a>"#
+                )
+                .unwrap();
+            }
+            
             link_href.clear();
             link_text.clear();
         }
         _ if is_reading_href => link_href.push(c),
-        _ => parsed_line.push(c),
+        _ => {
+            parsed_line.push(c);
+            is_reading_img = false;
+        },
     });
     parsed_line
 }
@@ -193,11 +206,21 @@ pub fn md2html<P: AsRef<path::Path>>(
 }
 
 fn main() {
-    // md2html("./in/test/input.md", "./out/base.html", "./out/parsed.html").unwrap();
-    println!(
-        "{}",
-        parse_markdown(include_str!("../in/test/input.md")).content_html
-    );
+    // println!("{:?}", md2html("./in/test/input.md", "./out/base.html", "./out/parsed.html").unwrap());
+    let string = build_blog_entry_list("./in/test/blog-list.txt");
+    println!("{string}");
+    if let Err(err) = create_blog_list("./out/test/file-list.html", "./in/test/test/", "./") {
+        println!("{:?}", err);
+    }
+}
+
+fn create_url(article: &ArticleInfo) -> String {
+    let mut url = article.date.replace('-', "/");
+    let title_in_url = article.title.to_ascii_lowercase().split_ascii_whitespace().take(3).collect::<Vec<_>>().join("-");
+    url.push_str("/");
+    url.push_str(&title_in_url);
+    url.push_str(".html");
+    url
 }
 
 fn create_blog_list<P: AsRef<path::Path>>(
@@ -211,19 +234,33 @@ fn create_blog_list<P: AsRef<path::Path>>(
         _ => None,
     });
     for path in files {
-        let filename = path.file_stem().unwrap().to_str().unwrap().to_string();
         let out_dir = base_path.as_ref().join("out/");
-        let article = md2html(
-            path.as_path(),
-            out_dir.join("base.html").as_path(),
-            out_dir.join(filename + ".html").as_path(),
-        )?;
+
+        let article = parse_markdown(&fs::read_to_string(path.as_path())?);
+        println!("1");
+        let base_html = fs::read_to_string(out_dir.join("base.html").as_path())?;
+        println!("2");
+        let parsed_html = base_html
+            .replace("{template}", &article.content_html)
+            .replace("{title}", &article.info.title)
+            .replace("{date}", &article.info.date);
+        let mut out_path = String::from("./out/");
+        let p = create_url(&article.info);
+        out_path.push_str(&p);
+        let out_path = path::Path::new(&out_path);
+        let prefix = out_path.parent().unwrap();
+        println!("2{prefix:?}");
+        std::fs::create_dir_all(prefix).unwrap();
+        println!("2");
+        let mut output_file = fs::File::create(out_path)?;
+        println!("2");
+        write!(output_file, "{parsed_html}")?;
         writeln!(
             file,
             "title: {title}\ndate: {date}\ndescription: {description}\n\n",
-            title = article.title,
-            date = article.date,
-            description = article.description
+            title = article.info.title,
+            date = article.info.date,
+            description = article.info.description
         )?;
     }
     Ok(())
@@ -272,8 +309,9 @@ fn parse_article(mut raw_article_lines: Lines) -> Option<ArticleInfo> {
 
 pub fn build_blog_entry_list(blog_list_path: impl AsRef<path::Path>) -> String {
     let articles = read_blog_list(blog_list_path);
-    let articles_per_year = articles.iter().grouping_by(|article| &article.date[5..]);
-    let articles_list_html: Vec<String> = articles_per_year
+    println!("{:?}", articles);
+    let articles_per_year = articles.iter().grouping_by(|article| &article.date[6..]);
+    let mut articles_list_html: Vec<String> = articles_per_year
         .iter()
         .map(|(year, article_list)| {
             format!(
@@ -286,6 +324,7 @@ pub fn build_blog_entry_list(blog_list_path: impl AsRef<path::Path>) -> String {
         })
         .collect();
 
+    articles_list_html.sort_unstable_by(|a, b| b.partial_cmp(a).unwrap());
     articles_list_html.join("\n")
 }
 

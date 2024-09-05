@@ -1,8 +1,8 @@
 # My new Blog!
-{date: 2022/10/02}
-{description: Since my first years of college, I always knew I would end up building my own blog from scratch. What I didn't know, is that it would take me so long to start to do it! But finally, I've decided to stop procrastinating it and start building it.}
+{date: 2023/10/02}
+{description: Another blogpost}
 
-## Day 1
+## Day 2
 Text p1
 still p2
 
@@ -16,6 +16,8 @@ fn function(parameter: u32) -> u8 {
     parameter as u8
 }
 ```
+
+
 
 ### Yet another section
 

@@ -6,11 +6,43 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/styles/default.min.css">
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
     <title>{title}</title>
     <meta property="og:title" content="{title}" />
     <meta property="og:description" content="{description}" />
     <style>
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('./IBMPlexMono-Bold.woff') format('woff');
+            font-weight: bold;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('./IBMPlexMono-BoldItalic.woff') format('woff');
+            font-weight: bold;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('./IBMPlexMono-Italic.woff') format('woff');
+            font-weight: normal;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'IBM Plex Mono';
+            src: url('./IBMPlexMono-Regular.woff') format('woff');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
         :root {
             --main-color: teal;
             --hover-color: #003232;
@@ -46,7 +78,7 @@
             font-weight: 400;
             line-height: 1.6;
             font-size: 1.5em;
-            font-family: "Fira Sans", Helvetica, Arial, sans-serif;
+            font-family: "IBM Plex Mono", Helvetica, Arial, sans-serif;
             margin: 0;
             color: #333;
         }
@@ -76,7 +108,7 @@
 
         p {
             padding: 0 25px;
-            font-size: 25px;
+            font-size: 20px;
             line-height: 1.5;
             word-break: normal;
         }
@@ -630,14 +662,21 @@
     </nav>
     <div id="content">
         <h1 id="title">{title}</h1>
-        <section class="article-metadata"><span class="article-date">{date}</span></section>
+        <section class="article-metadata"><span id="article-date">{date}</span></section>
         {template}
     </div>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script>
         hljs.highlightAll();
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.querySelector('link[href*="highlight.js"]').remove();
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/hybrid.min.css';
+            document.querySelector("head").append(link);
+        }
         document.getElementById("article-date").textContent =
-            Intl.DateTimeFormat("default", { month: "long", year: "numeric", day: "numeric" })
+            Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", day: "2-digit" })
                 .format(new Date(document.getElementById("article-date").textContent));
     </script>
 </body>
