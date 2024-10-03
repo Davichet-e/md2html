@@ -213,7 +213,8 @@ fn main() {
 
     let string = build_blog_entry_list(file_list_path);
     let mut file = fs::File::create("./out/blog-index.html").unwrap();
-    let _ = write!(file, "{string}");
+    let base = include_str!("../out/blog-index-base.html");
+    let _ = write!(file, "{}", base.replace("{{ blog-list }}", &string));
 
     println!("{string}");
 }
