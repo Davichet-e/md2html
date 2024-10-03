@@ -206,12 +206,16 @@ pub fn md2html<P: AsRef<path::Path>>(
 }
 
 fn main() {
-    // println!("{:?}", md2html("./in/test/input.md", "./out/base.html", "./out/parsed.html").unwrap());
-    let string = build_blog_entry_list("./in/test/blog-list.txt");
-    println!("{string}");
-    if let Err(err) = create_blog_list("./out/test/file-list.html", "./in/test/test/", "./") {
+    let file_list_path = "./out/file-list";
+    if let Err(err) = create_blog_list(file_list_path, "./in/", "./out/") {
         println!("{:?}", err);
     }
+
+    let string = build_blog_entry_list(file_list_path);
+    let mut file = fs::File::create("./out/blog-index.html").unwrap();
+    let _ = write!(file, "{string}");
+
+    println!("{string}");
 }
 
 fn create_url(article: &ArticleInfo) -> String {
@@ -226,7 +230,7 @@ fn create_url(article: &ArticleInfo) -> String {
 fn create_blog_list<P: AsRef<path::Path>>(
     blog_list_path: P,
     input_path: P,
-    base_path: P,
+    out_path: P,
 ) -> io::Result<()> {
     let mut file = fs::File::create(blog_list_path)?;
     let files = fs::read_dir(input_path)?.filter_map(|r| match r {
@@ -234,26 +238,19 @@ fn create_blog_list<P: AsRef<path::Path>>(
         _ => None,
     });
     for path in files {
-        let out_dir = base_path.as_ref().join("out/");
-
         let article = parse_markdown(&fs::read_to_string(path.as_path())?);
-        println!("1");
-        let base_html = fs::read_to_string(out_dir.join("base.html").as_path())?;
-        println!("2");
+        let base_html = fs::read_to_string("./out/base.html")?;
         let parsed_html = base_html
             .replace("{template}", &article.content_html)
             .replace("{title}", &article.info.title)
             .replace("{date}", &article.info.date);
-        let mut out_path = String::from("./out/");
         let p = create_url(&article.info);
-        out_path.push_str(&p);
-        let out_path = path::Path::new(&out_path);
+        let mut path_string = out_path.as_ref().to_str().unwrap().to_owned();
+        path_string.push_str(&p);
+        let out_path = path::Path::new(&path_string);
         let prefix = out_path.parent().unwrap();
-        println!("2{prefix:?}");
         std::fs::create_dir_all(prefix).unwrap();
-        println!("2");
         let mut output_file = fs::File::create(out_path)?;
-        println!("2");
         write!(output_file, "{parsed_html}")?;
         writeln!(
             file,
@@ -268,7 +265,7 @@ fn create_blog_list<P: AsRef<path::Path>>(
 
 pub fn read_blog_list(blog_list_path: impl AsRef<path::Path>) -> Vec<ArticleInfo> {
     let file = fs::read_to_string(blog_list_path).unwrap();
-    file.split("\n\n\n")
+    file.trim_end().split("\n\n\n")
         .map(|line_str| parse_article(line_str.lines()).unwrap())
         .collect()
 }
@@ -280,12 +277,13 @@ fn parse_blog_list(articles: &[&ArticleInfo]) -> String {
             blog_entries,
             r#"
 <div class="blog-entry">
-    <h3 class="article-name">{title}</h3>
+    <h3 class="article-name"><a href="/blog/{link}">{title}</a></h3>
     <h4 class="article-date">{date}</h4>
     <p>
         {description}
     </p>
 </div>"#,
+            link = create_url(&article),
             title = article.title,
             date = article.date,
             description = article.description
@@ -299,7 +297,6 @@ fn parse_article(mut raw_article_lines: Lines) -> Option<ArticleInfo> {
     let title = raw_article_lines.next()?.strip_prefix("title: ")?;
     let date = raw_article_lines.next()?.strip_prefix("date: ")?;
     let description = raw_article_lines.next()?.strip_prefix("description: ")?;
-
     Some(ArticleInfo {
         title: title.to_string(),
         date: date.to_string(),
@@ -309,8 +306,7 @@ fn parse_article(mut raw_article_lines: Lines) -> Option<ArticleInfo> {
 
 pub fn build_blog_entry_list(blog_list_path: impl AsRef<path::Path>) -> String {
     let articles = read_blog_list(blog_list_path);
-    println!("{:?}", articles);
-    let articles_per_year = articles.iter().grouping_by(|article| &article.date[6..]);
+    let articles_per_year = articles.iter().grouping_by(|article| &article.date[..4]);
     let mut articles_list_html: Vec<String> = articles_per_year
         .iter()
         .map(|(year, article_list)| {
