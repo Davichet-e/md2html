@@ -207,12 +207,12 @@ pub fn md2html<P: AsRef<path::Path>>(
 
 fn main() {
     let file_list_path = "./out/file-list";
-    if let Err(err) = create_blog_list(file_list_path, "./in/", "./out/") {
+    if let Err(err) = create_blog_list(file_list_path, "./in/", "../davichete-page/static/root/html/blog/") {
         println!("{:?}", err);
     }
 
     let string = build_blog_entry_list(file_list_path);
-    let mut file = fs::File::create("./out/blog-index.html").unwrap();
+    let mut file = fs::File::create("../davichete-page/static/root/html/blog/index.html").unwrap();
     let base = include_str!("../out/blog-index-base.html");
     let _ = write!(file, "{}", base.replace("{{ blog-list }}", &string));
 
